@@ -1,9 +1,10 @@
 #!/bin/bash
-# DataFusion runs inside the query program, with the run's threads and a memory pool of 80% of its
-# memory (room left for what the pool does not track).
+# DataFusion runs inside the query program, with as many threads as the container's cores (its
+# default) and a memory pool of 80% of its memory (room left for what the pool does not track):
+# DataFusion's default pool has no limit.
 set -e
 mkdir -p db
 
 # the query program, for the whole run: the runner's protocol on /run/dbo/dbo.sock
-nohup ./query /system/db "$DBO_THREADS" $((DBO_MEMORY_BYTES * 8 / 10)) >/run/dbo/query.log 2>&1 &
+nohup ./query /system/db $((DBO_MEMORY_BYTES * 8 / 10)) >/run/dbo/query.log 2>&1 &
 echo $! > query.pid

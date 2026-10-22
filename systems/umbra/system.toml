@@ -25,8 +25,8 @@ settings = ["SET debug.semana.pgdatesub = true"]
 [[container]]
 name = "db"
 image = "docker.io/umbradb/umbra:experimental"
-# Umbra takes its settings from the environment: worker threads, and the memory it sizes
-# itself for (it would otherwise see the host's)
+# Umbra takes its settings from the environment: worker threads, and the memory it sizes itself
+# for (it would otherwise size itself for the host's memory, and be killed for memory)
 # PGHOST: its socket in /run/dbo, where the query program connects
 env = { PARALLEL = "{threads}", MEMORY = "{memory_mb}M", PGHOST = "/run/dbo" }
 ulimits = ["nofile=524288:524288"]

@@ -1,16 +1,7 @@
 #!/bin/bash
 set -e
 
-# The threads and memory of this run (the server would otherwise size itself).
-sudo tee /etc/clickhouse-server/config.d/zz-limits.yaml >/dev/null <<EOF
-max_server_memory_usage: $((DBO_MEMORY_BYTES * 9 / 10))
-EOF
-sudo tee /etc/clickhouse-server/users.d/zz-limits.yaml >/dev/null <<EOF
-profiles:
-  default:
-    max_threads: $DBO_THREADS
-EOF
-
+# The server sizes itself for the container: as many threads as its cores, 90% of its memory limit.
 sudo clickhouse start
 
 # the query program, for the whole run: the runner's protocol on /run/dbo/dbo.sock

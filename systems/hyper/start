@@ -1,14 +1,13 @@
 #!/bin/bash
 # Start the Hyper server (hyperd), which speaks the PostgreSQL protocol, and create the database
 # file. The query program's connection keeps the database open for the run (Hyper closes a database
-# when its last connection ends, and opens it again cold).
+# when its last connection ends, and opens it again cold). Hyper sizes itself for the container: as
+# many query threads as its cores (150% at most), 80% of its memory limit.
 set -e
 mkdir -p db
 nohup hyperd run --no-password --skip-license --init-user postgres \
     --listen-connection tab.tcp://127.0.0.1:7483 --log-dir "$PWD/db" \
-    --default-database-version=4 --memory-limit="${DBO_MEMORY_MB}m" \
-    --soft-concurrent-query-thread-limit="$DBO_THREADS" --hard-concurrent-query-thread-limit="$DBO_THREADS" \
-    >server.log 2>&1 &
+    --default-database-version=4 >server.log 2>&1 &
 echo $! > server.pid
 
 for _ in $(seq 1 60); do

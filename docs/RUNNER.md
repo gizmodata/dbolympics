@@ -261,10 +261,17 @@ points, their defaults and where a difference goes are in [DIALECTS.md](DIALECTS
     cache back before it kills, so only memory a system really holds can get it killed. A kill
     takes the whole container (`memory.oom.group`) and fails the run.
   - **What the system sees:** LXCFS files are mounted over `/proc/meminfo`, `/proc/cpuinfo`,
-    `/proc/stat` and `/sys/devices/system/cpu`, so tools that read them see the limits. A
-    program that asks the kernel directly (`sysinfo`, which glibc uses for the amount of
-    memory) still sees the host; such a system needs its limit set explicitly from the
-    `DBO_*` variables or placeholders (as Umbra's and CedarDB's system files do).
+    `/proc/stat` and `/sys/devices/system/cpu`, so tools that read them see the limits.
+    - **Sizing itself:** most systems size themselves for the container from these files and the
+      cgroup, so they get no limits of their own. These are DuckDB, GizmoSQL, ClickHouse, chDB,
+      Hyper, CedarDB and Firebolt, and DataFusion's threads; each was checked in a limited
+      container.
+    - **Explicit limits:** a system that does not size itself gets its limits explicitly, from
+      the `DBO_*` variables or placeholders:
+      - Umbra's memory: it sizes itself for the host's memory and is killed. Its threads it
+        finds itself, but it gets them explicitly too, until its memory is fixed.
+      - DataFusion's memory pool: it has no limit by default.
+      - PostgreSQL's settings: its defaults are fixed numbers, whatever the machine.
 - **io_uring** is allowed: `bench/seccomp.json` is Podman's default seccomp profile plus the
   three io_uring calls. Locked memory is unlimited in the containers.
 

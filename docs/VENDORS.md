@@ -23,8 +23,9 @@ directory's files and the protocol.
    build at the end of another `install`). It runs once, as root, on Ubuntu 26.04, with network,
    in `/system`. Pin the versions.
 4. **`start`, `stop`**: start the system's servers (if any) and then the query program in the
-   background, its output to `/run/dbo/query.log`; stop them. Size the system from
-   `DBO_THREADS` and `DBO_MEMORY_BYTES` (or `DBO_MEMORY_MB`) if it reads the host's memory
+   background, its output to `/run/dbo/query.log`; stop them. Most systems size themselves for
+   the container; check that yours does. Only if it does not (it sees the host's memory, or has
+   fixed defaults), size it from `DBO_THREADS` and `DBO_MEMORY_BYTES` (or `DBO_MEMORY_MB`)
    ([RUNNER.md](RUNNER.md#containers), Limits).
 5. **`system.toml`**: the load statement for a Parquet file, the SQL spellings that differ from
    the defaults ([RUNNER.md](RUNNER.md#dialects)), type names, session settings, and any

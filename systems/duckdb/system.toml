@@ -10,8 +10,8 @@ statement = "COPY {table} FROM '{file}' (FORMAT parquet)"
 [dialect]
 # exact division of integers gives an exact (integer) result, as the standard requires; DuckDB's
 # default is a double
-# DuckDB's threads and memory limit for the run; it could otherwise size itself for the host
-settings = ["SET threads = {threads}", "SET memory_limit = '{memory_mb%80}MiB'", "SET integer_division = true"]
+# DuckDB sizes itself for the container: as many threads as its cores, 80% of its memory limit
+settings = ["SET integer_division = true"]
 
 [dialect.functions]
 "date_diff_days(a, b)" = "DATE_DIFF('day', {a}, {b})"

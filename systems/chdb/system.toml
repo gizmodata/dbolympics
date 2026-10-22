@@ -13,8 +13,8 @@ suffix = "ENGINE = MergeTree"
 suffix_without_keys = "ENGINE = MergeTree ORDER BY tuple()"
 
 [dialect]
-# Standard SQL behaviour where ClickHouse's defaults differ (as ../clickhouse/install), and the
-# limits of this run
+# Standard SQL behaviour where ClickHouse's defaults differ (as ../clickhouse/install). chDB sizes
+# itself for the container: as many threads as its cores, 90% of its memory limit for all queries.
 settings = [
     "SET data_type_default_nullable = 1",
     "SET join_use_nulls = 1",
@@ -26,8 +26,6 @@ settings = [
     "SET cast_keep_nullable = 1",
     "SET allow_lossy_numeric_supertype = 1",
     "SET max_recursive_cte_evaluation_depth = 1000000000000",
-    "SET max_threads = {threads}",
-    "SET max_memory_usage = {memory_bytes%80}",
 ]
 
 [dialect.types]

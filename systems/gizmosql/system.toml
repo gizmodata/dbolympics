@@ -9,10 +9,10 @@ version = "v1.42.0 (DuckDB 1.5.6)"
 statement = "COPY {table} FROM '{file}' (FORMAT parquet)"
 
 [dialect]
-# DuckDB's threads and memory limit for the run (80% of the limit for its buffers, as DuckDB's
-# own default); exact division of integers gives an exact (integer) result, as the standard
-# requires (DuckDB's default is a double)
-settings = ["SET threads = {threads}", "SET memory_limit = '{memory_mb%80}MiB'", "SET integer_division = true"]
+# DuckDB sizes itself for the container (as many threads as its cores, 80% of its memory limit);
+# exact division of integers gives an exact (integer) result, as the standard requires (DuckDB's
+# default is a double)
+settings = ["SET integer_division = true"]
 
 [dialect.functions]
 "date_diff_days(a, b)" = "DATE_DIFF('day', {a}, {b})"

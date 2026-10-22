@@ -7,7 +7,10 @@
 //! TABLE`). Everything else is DataFusion's SQL. A result is written by Arrow's CSV writer; a
 //! timeout drops the running query, which stops it.
 //!
-//!   query <directory for the tables> <threads> <memory pool bytes>
+//!   query <directory for the tables> <memory pool bytes>
+//!
+//! Its threads (Tokio's, and DataFusion's partitions) are as many as the container's cores, by
+//! default. Its memory is not: DataFusion's default pool has no limit.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -33,10 +36,10 @@ struct Cancel(Arc<Notify>);
 impl System {
     fn connect() -> (System, Cancel) {
         let args: Vec<String> = std::env::args().collect();
-        let (dir, threads, memory) = (args[1].clone(), args[2].parse::<usize>().unwrap(), args[3].parse::<usize>().unwrap());
-        let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(threads).enable_all().build().unwrap();
+        let (dir, memory) = (args[1].clone(), args[2].parse::<usize>().unwrap());
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
         let runtime = RuntimeEnvBuilder::new().with_memory_pool(Arc::new(FairSpillPool::new(memory))).with_disk_manager_builder(DiskManagerBuilder::default()).build_arc().expect("DataFusion's runtime");
-        let ctx = SessionContext::new_with_config_rt(SessionConfig::new().with_target_partitions(threads), runtime);
+        let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
         let stop = Arc::new(Notify::new());
         (System { rt, ctx, dir, stop: stop.clone() }, Cancel(stop))
     }

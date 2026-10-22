@@ -20,7 +20,7 @@ statement = "COPY {table} FROM '{file}' (FORMAT parquet)"
 [[container]]
 name = "db"
 image = "docker.io/cedardb/cedardb:v2026-10-08"
-# CedarDB takes its settings from the environment. By default it uses 45% of the machine's
-# memory for its buffers and 45% for queries; here the same shares of the configured memory.
-env = { CEDAR_PASSWORD = "Dbolympics-Bench-2026!", PARALLEL = "{threads}", BUFFERSIZE = "{memory_mb%45}M", WORKMEMSIZE = "{memory_mb%45}M" }
+# CedarDB sizes itself for the container: as many threads as its cores, and 45% of its memory limit
+# each for its buffers and its queries.
+env = { CEDAR_PASSWORD = "Dbolympics-Bench-2026!" }
 ulimits = ["nofile=524288:524288"]
