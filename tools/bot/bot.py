@@ -514,30 +514,21 @@ class Bot:
             if k:
                 self.schedule_release(job)
             job["system"] = system
+            failed_now = []
             for bench, configs in job["benchmarks"]:
                 self.stage(job, f"Running {system} on `{bench}`, system {k + 1} of {len(job['systems'])} "
                                 f"(stopped at the latest {job['deadline']}) ...")
                 cmd = ["target/release/dbo-bench", "run", "--benchmark", bench, "--system", system] + [a for c in configs for a in ("--config", c)]
                 if self.sh_logged(job, cmd):
-                    failed.append(f"{system} on {bench}")
+                    failed_now.append(bench)
+            failed += [f"{system} on {b}" for b in failed_now]
+            self.system_done(job, system, k, failed_now)
         self.cleanup()
         self.release(job)
 
-        files = []
-        # what the run wrote: new or changed files (not stripped, the status's first column may be a space)
-        status = subprocess.run(["git", "-C", str(self.run_dir), "status", "--porcelain", "-z", "--untracked-files=all", "--", "systems"],
-                                capture_output=True, text=True, check=True).stdout
-        for line in filter(None, status.split("\0")):
-            path = line[3:]
-            if RESULTS_PATH.match(path) and path.split("/")[1] in job["systems"] and line[:2] in ("??", " M"):
-                files.append(path)
+        files = self.result_files(job["systems"])
         if not files:
             raise Refused("The run wrote no results.\n\n" + details("The end of the log", self.tail(job)))
-        rows = []
-        for path in sorted(files):
-            if path.endswith(".csv"):
-                s, config = path.split("/")[1], path.rsplit("/", 1)[1][:-4]
-                rows.append((s, config, summary((self.run_dir / path).read_text()), self.on_main(s, config)))
 
         with self.git_lock:
             # the newest results of the systems not run now stay, if they are still of the systems' code
@@ -555,12 +546,10 @@ class Bot:
             commit = self.write_commit(tip, changes + undone, message)
             pushed = self.push(pr, head, commit)
 
+        # each system's table is in a comment of its own (system_done)
+        links = job.get("system_comments", {})
         out = [f"**{describe(job)}** on commit `{tip[:10]}`" + (f": the runner reported failures in {', '.join(failed)}." if failed else "."), "",
-               table(rows), ""]
-        problems_ = [f"- {s} / {config}: `{q['query']}` {q['status']}" + (f": {q['message'][:200]}" if q.get("message") else "")
-                     for s, config, sm, _ in rows for q in sm["queries"] + sm["failed"] if q["status"] != "ok"]
-        if problems_:
-            out.append(details(f"Not ok ({len(problems_)})", "\n".join(problems_[:100]) + ("\n- ..." if len(problems_) > 100 else "")))
+               "The results of each system: " + ", ".join(f"[{s}]({links[s]})" if links.get(s) else s for s in job["systems"]) + ".", ""]
         if kept:
             out.append(f"The results of {', '.join(kept)} from the earlier run stay in the commit.")
         if undone:
@@ -572,6 +561,32 @@ class Bot:
             out.append("**Not added to the pull request:** it has new commits since the run started. "
                        "Run the benchmark again with `/benchmark`.")
         return "\n".join(out), pushed and not failed
+
+    def result_files(self, systems):
+        """The results the run wrote of `systems`: new or changed files in their results directories."""
+        # not stripped: the status's first column may be a space
+        status = subprocess.run(["git", "-C", str(self.run_dir), "status", "--porcelain", "-z", "--untracked-files=all", "--", "systems"],
+                                capture_output=True, text=True, check=True).stdout
+        return sorted(line[3:] for line in filter(None, status.split("\0"))
+                      if RESULTS_PATH.match(line[3:]) and line[3:].split("/")[1] in systems and line[:2] in ("??", " M"))
+
+    def result_rows(self, files):
+        """The table's rows of the results files: (system, configuration, summary, summary on main)."""
+        return [(p.split("/")[1], p.rsplit("/", 1)[1][:-4], summary((self.run_dir / p).read_text()), self.on_main(p.split("/")[1], p.rsplit("/", 1)[1][:-4]))
+                for p in files if p.endswith(".csv")]
+
+    def system_done(self, job, system, k, failed):
+        """A comment of its own on the pull request with the table of a system that has run all its configurations."""
+        rows = self.result_rows(self.result_files([system]))
+        body = (f"**{system}** is done, system {k + 1} of {len(job['systems'])} of [the run]({job['comment_url']}) on commit "
+                f"`{job['commit'][:10]}`" + (f": the runner reported failures in {', '.join(failed)}." if failed else ".") + "\n\n"
+                + (table(rows) + "\n\n" + not_ok(rows) if rows else "It wrote no results.\n\n" + details("The end of the log", self.tail(job))))
+        try:  # a comment GitHub does not take now is no reason to stop the run
+            job.setdefault("system_comments", {})[system] = self.gh.comment(job["pr"], body).get("html_url")
+            with self.state_lock:
+                self.save()
+        except Exception:
+            log(f"run {job['id']}: the comment on {system} failed:\n{traceback.format_exc()}")
 
     def on_main(self, system, config):
         """The summary of the system's newest results for the configuration on main, if there are any."""
@@ -693,6 +708,13 @@ def quote(c):
 def describe(job):
     benches = ", ".join(f"{b.split('_', 1)[1][:-5]}" + (f" ({', '.join(cs)})" if cs else "") for b, cs in job["benchmarks"])
     return f"{', '.join(job['systems'])} on {benches}"
+
+
+def not_ok(rows):
+    """The queries and runs of the table's rows that were not ok, folded away; empty if there are none."""
+    lines = [f"- {s} / {config}: `{q['query']}` {q['status']}" + (f": {q['message'][:200]}" if q.get("message") else "")
+             for s, config, sm, _ in rows for q in sm["queries"] + sm["failed"] if q["status"] != "ok"]
+    return details(f"Not ok ({len(lines)})", "\n".join(lines[:100]) + ("\n- ..." if len(lines) > 100 else "")) if lines else ""
 
 
 def details(summary_, text):

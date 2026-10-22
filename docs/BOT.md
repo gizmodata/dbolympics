@@ -12,7 +12,8 @@ results become the pull request's last commit, so that they are reviewed with it
 2. **A maintainer comments** `/benchmark` on the pull request. A maintainer is anyone with the `maintain` or `admin`
    role in the repository. Others get a reply, once per pull request, that they cannot start a run.
 3. **The bot** (`tools/bot/bot.py`, on the server as the user `dbolympics`) polls GitHub for such comments, runs
-   the systems, adds the results commit, and replies to the comment with a table of the results.
+   the systems, comments each system's table of results when it is done, adds the results commit, and replies to
+   the comment.
 
 ## Commands
 
@@ -65,12 +66,16 @@ Each command goes at the start of a line. Edited comments do not count.
    - The new results commit is the last one again, and the reply asks the contributor to `git pull --rebase`.
 8. **Pushing.** The bot pushes with `--force-with-lease`. A push by the contributor during the run is never
    overwritten: the reply then says the results were not added.
-9. **The reply.** For each system and configuration it gives:
+9. **A comment per system.** When a system has run all its configurations, the bot comments its table on the
+   pull request, a comment of its own for each system. Per configuration, the table gives:
    - the loads' time;
    - the last run's queries by status;
    - their time and geometric mean;
-   - the same numbers from main's newest results, for comparison;
-   - the queries that were not ok.
+   - the same numbers from main's newest results, for comparison.
+
+   Below it, folded away, are the queries that were not ok.
+10. **The reply** to the approving comment, at the end, links to each system's comment. It says whether the
+    results commit was added and which results it undid or kept.
 
 ## Installing it on the server
 
