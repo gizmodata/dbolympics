@@ -45,7 +45,7 @@ DEFAULTS = {
     "key_file": "~/.ssh/db-olympics-bot.pem",  # the app's private key
     "work": "~/dbo-bot",                     # the clone, the runs' checkout with its data, the logs, the state
     "poll_seconds": 30,
-    "reserve_hours": 24,                     # the machine is reserved this long at most, then released and the run killed
+    "reserve_hours": 24,                     # each system's time on the machine at most: then it is released and the run killed
     "benchmarks": ["sf1", "sf10", "sf100", "sf1000"],  # a plain /benchmark
 }
 COMMAND = re.compile(r"^/benchmark\b[ \t]*(.*)$", re.M)
@@ -509,12 +509,17 @@ class Bot:
             raise Refused("Building the runner failed.\n\n" + details("The end of the log", self.tail(job)))
         self.reserve(job)
         failed = []
-        for bench, configs in job["benchmarks"]:
-            self.stage(job, f"Running `{bench}` (the run is stopped at the latest {job['deadline']}) ...")
-            cmd = ["target/release/dbo-bench", "run", "--benchmark", bench]
-            cmd += [a for s in job["systems"] for a in ("--system", s)] + [a for c in configs for a in ("--config", c)]
-            if self.sh_logged(job, cmd):
-                failed.append(bench)
+        # one system after the other, each with all its configurations and `reserve_hours` of its own
+        for k, system in enumerate(job["systems"]):
+            if k:
+                self.schedule_release(job)
+            job["system"] = system
+            for bench, configs in job["benchmarks"]:
+                self.stage(job, f"Running {system} on `{bench}`, system {k + 1} of {len(job['systems'])} "
+                                f"(stopped at the latest {job['deadline']}) ...")
+                cmd = ["target/release/dbo-bench", "run", "--benchmark", bench, "--system", system] + [a for c in configs for a in ("--config", c)]
+                if self.sh_logged(job, cmd):
+                    failed.append(f"{system} on {bench}")
         self.cleanup()
         self.release(job)
 
@@ -575,8 +580,8 @@ class Bot:
         return summary(git(self.mirror, "show", f"main:{max(paths)}")) if paths else None
 
     def reserve(self, job):
-        """Wait until nobody holds the machine, then reserve it: released after `reserve_hours` at the latest, and
-        everything of this user killed then (the run, its containers, this bot, which systemd restarts)."""
+        """Wait until nobody holds the machine, then reserve it, released after `reserve_hours` at the latest
+        (schedule_release)."""
         said = None
         while not (st := sh(["reserve-machine", "status"]).strip()).startswith("not reserved"):
             if self.cancel.is_set():
@@ -585,9 +590,15 @@ class Bot:
                 self.stage(job, f"Waiting for the machine: {st.splitlines()[0]}.")
                 said = st
             self.cancel.wait(60)
-        hours = self.cfg["reserve_hours"]
         sh(["reserve-machine", "-y"], check=True)
         job["reserved_at"] = time.time()
+        self.schedule_release(job)
+
+    def schedule_release(self, job):
+        """Release the machine `reserve_hours` from now, and kill everything of this user then (the run, its
+        containers, this bot, which systemd restarts); a release scheduled before is replaced."""
+        hours = self.cfg["reserve_hours"]
+        job["release_at"] = time.time() + hours * 3600
         job["deadline"] = (datetime.datetime.now() + datetime.timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M")
         with self.state_lock:
             self.save()
@@ -641,8 +652,8 @@ class Bot:
         if job.get("reserved_at"):
             if sh(["reserve-machine", "status"]).startswith(f"reserved by {getpass.getuser()}"):
                 sh(["release-machine", "-y"])
-            elif time.time() - job["reserved_at"] >= self.cfg["reserve_hours"] * 3600 - 300:
-                reason = f"the run did not finish within {self.cfg['reserve_hours']} hours and was stopped"
+            elif time.time() >= job.get("release_at", 0) - 300:
+                reason = f"{job.get('system', 'the run')} did not finish within {self.cfg['reserve_hours']} hours and was stopped"
         log(f"run {job['id']}: {reason}")
         self.gh.edit(job["reply_id"], job["intro"] + f"Failed: {reason}.\n\n" + details("The end of the log", self.tail(job)))
         self.gh.react(job["comment_id"], "confused")

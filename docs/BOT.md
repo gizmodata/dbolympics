@@ -41,12 +41,15 @@ Each command goes at the start of a line. Edited comments do not count.
    build from run to run.
 4. **The machine.** The bot waits until nobody holds the machine. Then it reserves it with `reserve-machine`, which
    ends the other users' sessions and processes.
-   - It schedules `release-machine 24h --kill` at the same time. If the run is not over after 24 hours, the machine is
-     released, and everything of `dbolympics` is killed: the run, its containers and the bot.
-   - systemd starts the bot again, and it replies that the run was stopped.
+   - It schedules `release-machine 24h --kill` at the same time: each system gets 24 hours (`reserve_hours`).
+   - Before each further system, it schedules the release again, 24 hours from then. A scheduled release is
+     replaced by the new one, so extending always works.
+   - If a system is not done within its 24 hours, the machine is released, and everything of `dbolympics` is
+     killed: the run, its containers and the bot. systemd starts the bot again, and it replies which system was
+     stopped.
    - A run that ends in time releases the machine as soon as it is done, which also cancels the scheduled release.
-5. **The run.** `dbo-bench run --benchmark … --system …` runs once per benchmark file. The output goes to
-   `<work>/logs/<pull request>-<comment>.log`.
+5. **The run.** One system after the other, each with all its configurations: `dbo-bench run --benchmark …
+   --system <system>` once per benchmark file. The output goes to `<work>/logs/<pull request>-<comment>.log`.
 6. **The results commit.** The new `systems/<name>/results/<date>/` files become one commit, authored by the bot, on
    top of the pull request's last commit.
    - Results of other systems from the earlier results commit stay, as long as those systems' code has not changed.

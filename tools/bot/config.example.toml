@@ -12,7 +12,8 @@ key_file = "~/.ssh/db-olympics-bot.pem"
 work = "/raid0/dbolympics/dbo-bot"
 
 poll_seconds = 30
-# the machine is reserved for a run this long at most: then released, and the run killed
+# each system's time on the machine at most (the reservation is extended before the next system): then the
+# machine is released, and the run killed
 reserve_hours = 24
 # what a plain /benchmark runs
 benchmarks = ["sf1", "sf10", "sf100", "sf1000"]
