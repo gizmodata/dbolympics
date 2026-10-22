@@ -1,0 +1,97 @@
+name: Hardcharger native Linux validation
+on:
+  push:
+    branches: [hardcharger-native-check]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the submitted installer on native x86_64
+        run: |
+          docker build -f bench/image/Containerfile -t hardcharger-dbo-base bench/image
+          printf 'FROM hardcharger-dbo-base\nCOPY hardcharger /system\nCOPY dbo /dbo\nRUN ./install\n' > /tmp/Containerfile
+          printf '**/target\n*/results\n*/logo.svg\n' > /tmp/Containerfile.dockerignore
+          docker build -f /tmp/Containerfile -t hardcharger-dbo-test systems
+      - name: Check CLI sessions, CSV and cancellation without network access
+        run: |
+          mkdir -p /tmp/verify
+          cat > /tmp/verify/smoke.py <<'PYTHON'
+          import collections
+          import json
+          from pathlib import Path
+          import socket
+          import struct
+          import sys
+          import time
+          
+          OUT = Path('/verify')
+          SOCKET = '/run/dbo/dbo.sock'
+          periods = ['2024-and-earlier', '2025-Q1', '2025-Q2', '2025-Q3', '2025-Q4']
+          s = socket.socket(socket.AF_UNIX)
+          for _ in range(300):
+              try:
+                  s.connect(SOCKET)
+                  break
+              except (FileNotFoundError, ConnectionRefusedError):
+                  time.sleep(.1)
+          else:
+              raise RuntimeError('query program did not start')
+          s.settimeout(310)
+          
+          def read(n):
+              result = bytearray()
+              while len(result) < n:
+                  b = s.recv(n - len(result))
+                  if not b:
+                      raise RuntimeError('query program closed the connection')
+                  result += b
+              return bytes(result)
+          
+          def query(sql, timeout=5000):
+              raw = sql.encode()
+              t = time.monotonic()
+              s.sendall(struct.pack('<II', len(raw) + 4, timeout) + raw)
+              (n,) = struct.unpack('<I', read(4))
+              result = read(n)
+              return result[0], result[1:], time.monotonic() - t
+          
+          def require(sql, timeout=5000):
+              status, result, elapsed = query(sql, timeout)
+              assert status == 0, (sql[:150], status, result.decode(errors='replace'))
+              return result
+          
+          assert require('SELECT 1') == b'1\n'
+          # Real runner's timeout probe, repeatedly, including recovery after ordinary SQL errors.
+          slow = 'WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 1000000000000) SELECT count(*) FROM r'
+          for i in range(5):
+              status, result, elapsed = query(slow, 1000)
+              assert status == 2 and elapsed < 6, (status, result, elapsed)
+              assert require('SELECT 1') == b'1\n'
+              assert query('SELECT * FROM no_such_table')[0] == 1
+              assert require('SELECT 2') == b'2\n'
+          print('Timeout cancellation and error recovery: 5/5 passed', flush=True)
+          # CSV with NULL, commas, embedded quotes and line breaks; no headers or footer.
+          assert require("SELECT NULL::VARCHAR, 'a,b', 'a\"b', 'a' || chr(10) || 'b'") == b',"a,b","a""b","a\nb"\n'
+          require('CREATE TEMP TABLE connection_probe (n INTEGER)')
+          require('INSERT INTO connection_probe VALUES (42)')
+          assert require('SELECT n FROM connection_probe') == b'42\n'
+          require('DROP TABLE connection_probe')
+          print('CSV and persistent-session checks passed', flush=True)
+          if '--smoke-only' in sys.argv:
+              sys.exit(0)
+          
+          PYTHON
+          docker run -d --name dbo-test --network none --memory 16g --cpus 4 -e DBO_THREADS=4 -e DBO_MEMORY_MB=16384 -v /tmp/verify:/verify hardcharger-dbo-test sleep infinity
+          docker exec dbo-test mkdir -p /run/dbo
+          docker exec dbo-test ./start
+          docker exec dbo-test python3 /verify/smoke.py --smoke-only
+          docker exec dbo-test ./stop
+      - name: Logs and cleanup
+        if: always()
+        run: |
+          docker exec dbo-test cat /run/dbo/query.log /system/server.log || true
+          docker rm -f dbo-test || true
